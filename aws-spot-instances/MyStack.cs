@@ -4,6 +4,7 @@ using Pulumi.Aws.Ec2.Inputs;
 using Pulumi.Aws.Inputs;
 using System;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 class MyStack : Stack
@@ -60,7 +61,7 @@ class MyStack : Stack
         //    Console.WriteLine($"SpotInstanceId: {spotRequest.SpotInstanceId.Apply(x => x.ToString())}");
         //    Console.WriteLine($"SpotInstanceId: {spotRequest.SpotInstanceId.Apply(x => x).ToString()}");
 
-        //    WaitAndTry(spotRequest).Wait();
+        this.SpotInstanceId = WaitAndTry(spotRequest);
         //}
 
         //---------------- END OPTION 1 ---------------
@@ -71,7 +72,7 @@ class MyStack : Stack
         //Do I have to do a multi-step process to import the resulting instance ID, and then update the tags on the instance that I import? 
         
         //Output the SpotInstanceId
-        SpotInstanceId = spotRequest.SpotInstanceId;
+        //SpotInstanceId = spotRequest.SpotInstanceId;
 
         //Run this THE SECOND TIME you run the `pulumi up` command
         ////var stackReference = new StackReference($"replace/with-your/stack");
@@ -103,21 +104,26 @@ class MyStack : Stack
         //---------------- END OPTION 2 ---------------------
     }
 
-    private async Task WaitAndTry(SpotInstanceRequest spotRequest)
+    private Output<string> WaitAndTry(SpotInstanceRequest spotRequest, int i = 0)
     {
-        for (int i = 1; i <= 6; i++)
+        if (Deployment.Instance.IsDryRun)
+            return Output.Create(""); // Empty in preview
+        
+        var getSpotInstanceRequest = SpotInstanceRequest.Get($"get-spot-instance-{i}", spotRequest.Id, null, new CustomResourceOptions { DependsOn = spotRequest });
+        return getSpotInstanceRequest.SpotInstanceId.Apply(v =>
         {
-            await Task.Delay(10000);
+            Console.WriteLine($"SpotInstanceId from GET request: {v}");
+            if (!string.IsNullOrEmpty(v)) // whatever the check you need to run
+                return Output.Create(v);
 
-            var getSpotInstanceRequest = SpotInstanceRequest.Get($"get-spot-instance-{i}", spotRequest.Id, null, new CustomResourceOptions { DependsOn = spotRequest });
+            if (i >= 6)
+            {
+                Console.WriteLine("Out of luck, stopping");
+                return Output.Create("<UNKNOWN>");
+            }
 
-            Console.WriteLine($"SpotInstanceId from GET request: {getSpotInstanceRequest.SpotInstanceId}");
-            Console.WriteLine($"SpotInstanceId from GET request: {getSpotInstanceRequest.SpotInstanceId.ToString()}");
-            Console.WriteLine($"SpotInstanceId from GET request: {getSpotInstanceRequest.SpotInstanceId.Apply(x => x)}");
-            Console.WriteLine($"SpotInstanceId from GET request: {getSpotInstanceRequest.SpotInstanceId.Apply(x => x.ToString())}");
-            Console.WriteLine($"SpotInstanceId from GET request: {getSpotInstanceRequest.SpotInstanceId.Apply(x => x).ToString()}");
-
-            //If I could actually get the SpotInstanceId here, I would be able to invoke the AWS SDK here to add tags to that instance?
-        }
+            Thread.Sleep(10000);
+            return WaitAndTry(spotRequest, i + 1);
+        });
     }
 }
