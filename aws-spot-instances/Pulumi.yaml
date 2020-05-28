@@ -1,0 +1,3 @@
+name: aws-spot-instances
+runtime: dotnet
+description: A project to create and manage AWS Spot Instances
